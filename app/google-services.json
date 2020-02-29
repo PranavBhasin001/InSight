@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "554757283582",
+    "firebase_url": "https://insight-269702.firebaseio.com",
+    "project_id": "insight-269702",
+    "storage_bucket": "insight-269702.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:554757283582:android:7114df40a1e70f89e10faf",
+        "android_client_info": {
+          "package_name": "com.example.insight"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "554757283582-2n2codk9tsi2hgdkc6t07tqhbsbgk9g0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.insight",
+            "certificate_hash": "b5f6a4ddf84ae4b4a0ac3d0b11ce7e5a34a35b87"
+          }
+        },
+        {
+          "client_id": "554757283582-thbdeiletg680rjmoo40c3m1ci5e45sm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCunJ666bZNpumltO1l_G1Movp8troxG0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "554757283582-thbdeiletg680rjmoo40c3m1ci5e45sm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

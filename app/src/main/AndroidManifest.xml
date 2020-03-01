@@ -40,7 +40,7 @@
                   </provider>
                   <meta-data
                       android:name="com.google.firebase.ml.vision.DEPENDENCIES"
-                      android:value="vision" />
+                      android:value="vision, label, face" />
               </application>
 
 

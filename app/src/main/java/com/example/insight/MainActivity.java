@@ -18,6 +18,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -27,10 +28,15 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.FileProvider;
 
+import com.github.chrisbanes.photoview.PhotoView;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.ml.vision.FirebaseVision;
 import com.google.firebase.ml.vision.common.FirebaseVisionImage;
+import com.google.firebase.ml.vision.face.FirebaseVisionFace;
+import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetector;
+import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetectorOptions;
 import com.google.firebase.ml.vision.label.FirebaseVisionCloudImageLabelerOptions;
 import com.google.firebase.ml.vision.label.FirebaseVisionImageLabel;
 import com.google.firebase.ml.vision.label.FirebaseVisionImageLabeler;
@@ -52,11 +58,14 @@ import java.util.List;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
+    private ScaleGestureDetector mScaleGestureDetector;
+    private float mScaleFactor = 1.0f;
     Map<Integer, String> categoryMap = new HashMap<>();
     static final int REQUEST_IMAGE_CAPTURE = 1;
     Button camera;
     Button gallery;
     ImageView imageView;
+    PhotoView photoView;
     static final int REQUEST_TAKE_PHOTO = 1;
     static final int RESULT_LOAD_IMG = 2;
     String currentPhotoPath;
@@ -77,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
     LinkedList<Rect> rectangles = new LinkedList<>();
     LinkedList<Integer> categories = new LinkedList<>();
     LinkedList<String> labels = new LinkedList<>();
+    LinkedList<Rect> faceRectangles = new LinkedList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,7 +95,10 @@ public class MainActivity extends AppCompatActivity {
         populateCategories();
         camera = findViewById(R.id.camera);
         gallery = findViewById(R.id.gallery);
-        imageView = findViewById(R.id.image);
+//        imageView = findViewById(R.id.image);
+        photoView = findViewById(R.id.image);
+
+
         if (!hasPermissions(this, PERMISSIONS)) {
             ActivityCompat.requestPermissions(this, PERMISSIONS, PERMISSION_ALL);
         }
@@ -111,7 +124,15 @@ public class MainActivity extends AppCompatActivity {
                 return false;
             }
         });
+//        mScaleGestureDetector = new ScaleGestureDetector(this, new ScaleListener());
     }
+
+//    @Override
+//    public boolean onTouchEvent(MotionEvent motionEvent) {
+//        mScaleGestureDetector.onTouchEvent(motionEvent);
+//        return true;
+//    }
+
     private void populateCategories() {
         this.categoryMap.put(0, "Category Unknown");
         this.categoryMap.put(1, "Home Good");
@@ -120,6 +141,16 @@ public class MainActivity extends AppCompatActivity {
         this.categoryMap.put(4, "Place");
         this.categoryMap.put(5, "Plant");
     }
+//    private class ScaleListener extends ScaleGestureDetector.SimpleOnScaleGestureListener {
+//        @Override
+//        public boolean onScale(ScaleGestureDetector scaleGestureDetector) {
+//            mScaleFactor *= scaleGestureDetector.getScaleFactor();
+//            mScaleFactor = Math.max(0.1f, Math.min(mScaleFactor, 10.0f));
+//            imageView.setScaleX(mScaleFactor);
+//            imageView.setScaleY(mScaleFactor);
+//            return true;
+//        }
+//    }
 
     public static boolean hasPermissions(Context context, String... permissions) {
         if (context != null && permissions != null) {
@@ -184,15 +215,22 @@ public class MainActivity extends AppCompatActivity {
             bitmap = BitmapFactory.decodeFile(currentPhotoPath);
             bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
             Matrix matrix = new Matrix();
+
             matrix.postRotate(getExifOrientation(currentPhotoPath));
             //create new rotated bitmap
             bitmap = Bitmap.createBitmap(bitmap, 0, 0,bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+            processFaceDetection();
             processImage();
             //modifyImage();
-            imageView.setImageBitmap(bitmap);
+//            imageView.setImageBitmap(bitmap);
+
+            photoView.setImageBitmap(bitmap);
 
             galleryAddPic();
         } else if (requestCode == RESULT_LOAD_IMG && resultCode == RESULT_OK) {
+            Bundle extras = data.getExtras();
+            Bitmap imageBitmap = (Bitmap) extras.get("data");
+
 
             final Uri imageUri = data.getData();
             InputStream imageStream = null;
@@ -201,8 +239,15 @@ public class MainActivity extends AppCompatActivity {
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             }
-            final Bitmap selectedImage = BitmapFactory.decodeStream(imageStream);
-            imageView.setImageBitmap(selectedImage);
+            //currentPhotoPath = imageUri.getAb
+            bitmap = BitmapFactory.decodeStream(imageStream);
+            bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
+            Matrix matrix = new Matrix();
+            bitmap = Bitmap.createBitmap(bitmap, 0, 0,bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+            matrix.postRotate(getExifOrientation(currentPhotoPath));
+            processImage();
+//            imageView.setImageBitmap(bitmap);
+            photoView.setImageBitmap(bitmap);
         }
     }
     private void galleryAddPic() {
@@ -212,6 +257,58 @@ public class MainActivity extends AppCompatActivity {
         mediaScanIntent.setData(contentUri);
         this.sendBroadcast(mediaScanIntent);
     }
+
+    private void processFaceDetection() {
+        // High-accuracy landmark detection and face classification
+        FirebaseVisionFaceDetectorOptions highAccuracyOpts =
+                new FirebaseVisionFaceDetectorOptions.Builder()
+                        .setPerformanceMode(FirebaseVisionFaceDetectorOptions.ACCURATE)
+                        .setLandmarkMode(FirebaseVisionFaceDetectorOptions.ALL_LANDMARKS)
+//                        .setClassificationMode(FirebaseVisionFaceDetectorOptions.ALL_CLASSIFICATIONS)
+                        .setContourMode(FirebaseVisionFaceDetectorOptions.ALL_CONTOURS)
+                        .build();
+        FirebaseVisionImage image = FirebaseVisionImage.fromBitmap(bitmap);
+        FirebaseVisionFaceDetector detector = FirebaseVision.getInstance()
+                .getVisionFaceDetector(highAccuracyOpts);
+        Task<List<FirebaseVisionFace>> result =
+                detector.detectInImage(image)
+                        .addOnSuccessListener(
+                                new OnSuccessListener<List<FirebaseVisionFace>>() {
+                                    @Override
+                                    public void onSuccess(List<FirebaseVisionFace> faces) {
+                                        for (FirebaseVisionFace face : faces) {
+                                            Rect bounds = face.getBoundingBox();
+                                            faceRectanglesBuffer(bounds);
+
+//                                            float rotY = face.getHeadEulerAngleY();  // Head is rotated to the right rotY degrees
+//                                            float rotZ = face.getHeadEulerAngleZ();  // Head is tilted sideways rotZ degrees
+
+//                                            // If landmark detection was enabled (mouth, ears, eyes, cheeks, and
+//                                            // nose available):
+//                                            FirebaseVisionFaceLandmark leftEar = face.getLandmark(FirebaseVisionFaceLandmark.LEFT_EAR);
+//                                            if (leftEar != null) {
+//                                                FirebaseVisionPoint leftEarPos = leftEar.getPosition();
+//                                            }
+//
+//                                            // If contour detection was enabled:
+//                                            List<FirebaseVisionPoint> leftEyeContour =
+//                                                    face.getContour(FirebaseVisionFaceContour.LEFT_EYE).getPoints();
+//                                            List<FirebaseVisionPoint> upperLipBottomContour =
+//                                                    face.getContour(FirebaseVisionFaceContour.UPPER_LIP_BOTTOM).getPoints();
+//
+////
+                                        }
+                                    }
+                                })
+                        .addOnFailureListener(
+                                new OnFailureListener() {
+                                    @Override
+                                    public void onFailure(@NonNull Exception e) {
+                                    }
+                                });
+    }
+
+
 
     private void processImage() {
         // Multiple object detection in static images
@@ -359,44 +456,57 @@ public class MainActivity extends AppCompatActivity {
 //
 //
 //        }
-        private void draw(Rect rect, int classificationCategory, String label) {
-            Paint strokePaint = new Paint();
-            strokePaint.setStyle(Paint.Style.STROKE);
-            strokePaint.setColor(Color.RED);
-            strokePaint.setStrokeWidth(10);
-            canvas.drawRect(rect, strokePaint);
+    private void drawObjectBoundsAndLabels(Rect rect, int classificationCategory, String label) {
+        Paint strokePaint = new Paint();
+        strokePaint.setStyle(Paint.Style.STROKE);
+        strokePaint.setColor(Color.RED);
+        strokePaint.setStrokeWidth(10);
+        canvas.drawRect(rect, strokePaint);
 
-            Paint text = new Paint();
-            text.setStyle(Paint.Style.FILL);
-            text.setColor(Color.RED);
-            text.setTextSize(100);
-            if ((rect.top - 100) <= 0) {
-                canvas.drawText(label, rect.left, rect.bottom + 100, text);
-            } else {
-                canvas.drawText(label, rect.left, rect.top - 50, text);
-            }
-
-            imageView.postInvalidate();
+        Paint text = new Paint();
+        text.setStyle(Paint.Style.FILL);
+        text.setColor(Color.RED);
+        text.setTextSize(100);
+        if ((rect.top - 100) <= 0) {
+            canvas.drawText(label, rect.left, rect.bottom + 100, text);
+        } else {
+            canvas.drawText(label, rect.left, rect.top - 50, text);
         }
+
+//            imageView.postInvalidate();
+        photoView.postInvalidate();
+    }
+    private void drawFaceBoundsAndLabels(Rect face) {
+        Paint strokePaint = new Paint();
+        strokePaint.setStyle(Paint.Style.STROKE);
+        strokePaint.setColor(Color.BLUE);
+        strokePaint.setStrokeWidth(10);
+        canvas.drawRect(face, strokePaint);
+        photoView.postInvalidate();
+    }
     public void labelBuffer(String label) {
-        Log.d("AsyncCall", label);
+        Log.d("AsyncCall Label", label);
         this.labels.add(label);
         startDraw();
-
-
     }
     public void rectanglesBuffer(Rect rect) {
-        Log.d("AsyncCall", rect.toString());
+        Log.d("AsyncCall Object", rect.toString());
         this.rectangles.add(rect);
-
     }
     public void categoriesBuffer(int category) {
-        Log.d("AsyncCall", String.valueOf(category));
+        Log.d("AsyncCall Categories", String.valueOf(category));
         this.categories.add(category);
     }
+    public void faceRectanglesBuffer(Rect face) {
+        Log.d("AsyncCall Face", String.valueOf(face));
+        this.faceRectangles.add(face);
+        startDrawFace();
+    }
     public void startDraw() {
-        draw(rectangles.remove(), categories.remove(), labels.remove());
-
+        drawObjectBoundsAndLabels(rectangles.remove(), categories.remove(), labels.remove());
+    }
+    public void startDrawFace() {
+        drawFaceBoundsAndLabels(faceRectangles.remove());
     }
     /**
      * https://stackoverflow.com/questions/4349075/bitmapfactory-decoderesource-returns-a-mutable-bitmap-in-android-2-2-and-an-immu
